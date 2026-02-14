@@ -25,4 +25,4 @@ env/
 .vscode/
 
 #Other
-get_token.py
+test/
