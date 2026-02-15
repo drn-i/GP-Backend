@@ -1,6 +1,3 @@
-from django.apps import AppConfig
-
-
 import os
 from django.apps import AppConfig
 from django.conf import settings
@@ -24,8 +21,3 @@ class UsersConfig(AppConfig):
                     print("WARNING: serviceAccountKey.json not found. Firebase Auth will fail.")
             except Exception as e:
                 print(f"ERROR: Failed to initialize Firebase: {e}")
-                
-class UsersConfig(AppConfig):
-    default_auto_field = 'django.db.models.BigAutoField'
-    name = 'apps.users'
-    label = 'users'

@@ -1,72 +1,60 @@
 from rest_framework.authentication import BaseAuthentication
-from rest_framework import exceptions
+from rest_framework.exceptions import AuthenticationFailed
 from firebase_admin import auth
 from django.contrib.auth import get_user_model
 
+# 🛑 CRITICAL FIX: Always get the custom User model dynamically
 User = get_user_model()
 
-# ---------------------------------------------------------------------------
-# 1. THE UTILITY FUNCTION (What you provided, slightly hardened)
-# Used explicitly by the /sync endpoint to extract UID before User exists.
-# ---------------------------------------------------------------------------
 def verify_firebase_token(request):
-    """
-    Parses and verifies the Firebase ID Token from the Authorization header.
-    Returns: The decoded token dictionary (containing 'uid', 'email', etc.)
-    Raises: AuthenticationFailed if token is invalid or missing.
-    """
-    auth_header = request.headers.get('Authorization')
-    
+    """Parse and verify a Firebase ID token from the Authorization header."""
+    # Support both Django's request.META and DRF's request.headers
+    auth_header = request.headers.get('Authorization') or request.META.get('HTTP_AUTHORIZATION')
+
     if not auth_header:
-        raise exceptions.AuthenticationFailed("No Authorization header provided.")
+        raise AuthenticationFailed("No Authorization header provided.")
 
     parts = auth_header.split()
-    
-    if parts[0].lower() != "bearer":
-        raise exceptions.AuthenticationFailed("Authorization header must start with Bearer.")
-        
+    if parts[0].lower() != 'bearer':
+        raise AuthenticationFailed("Authorization header must start with Bearer.")
     if len(parts) == 1:
-        raise exceptions.AuthenticationFailed("Token missing.")
-        
+        raise AuthenticationFailed("Token missing.")
     if len(parts) > 2:
-        raise exceptions.AuthenticationFailed("Authorization header must be Bearer <token>.")
+        raise AuthenticationFailed("Authorization header must be 'Bearer <token>'.")
 
     token = parts[1]
-    
+
     try:
-        # Verify signature, expiry, and project ID
         decoded_token = auth.verify_id_token(token)
         return decoded_token
     except Exception as e:
-        raise exceptions.AuthenticationFailed(f"Invalid Firebase Token: {str(e)}")
+        raise AuthenticationFailed(f"Invalid Firebase token: {str(e)}")
 
 
-# ---------------------------------------------------------------------------
-# 2. THE AUTHENTICATION CLASS (The DRF Standard)
-# Used automatically by 'IsAuthenticated' permissions on protected views.
-# ---------------------------------------------------------------------------
 class FirebaseAuthentication(BaseAuthentication):
     """
     Django REST Framework Authentication Class.
-    1. Verifies the token using the utility above.
-    2. Matches the Firebase UID to a local MySQL User.
+    Used automatically by 'IsAuthenticated' permissions on protected views.
     """
     def authenticate(self, request):
-        try:
-            # Re-use the utility function to get the token data
-            decoded_token = verify_firebase_token(request)
-            uid = decoded_token.get("uid")
-        except exceptions.AuthenticationFailed:
-            # If token is bad, return None to let other auth classes try
-            # or let the Permission class fail the request.
-            return None
+        # 1. Use your helper function! If the header is missing, 
+        # this will now RAISE an error instead of returning None.
+        decoded_token = verify_firebase_token(request)
+        uid = decoded_token.get('uid')
 
-        # Statefulness Check: Does this user exist in our MySQL DB?
+        # 2. Statefulness Check: Does this user exist in our MySQL DB?
         try:
-            # We map Firebase UID -> Django Username
+            # We strictly use .get() here instead of .get_or_create(). 
+            # If they hit /profiles/ without calling /sync/ first, we block them.
             user = User.objects.get(username=uid)
-            return (user, None)  # Authentication Successful
+            return (user, decoded_token)
+
         except User.DoesNotExist:
-            # Token is valid, but User is not in MySQL.
-            # This happens if they signed up on Firebase but didn't call /sync.
-            raise exceptions.AuthenticationFailed("User valid in Firebase but not synced to local DB. Call /api/v1/auth/sync/ first.")
+            raise AuthenticationFailed("User valid in Firebase but not synced to local DB. Call /api/v1/users/sync/ first.")
+
+    def authenticate_header(self, request):
+        """
+        This forces DRF to return a 401 Unauthorized instead of a 403 Forbidden 
+        if the token is completely missing.
+        """
+        return 'Bearer'

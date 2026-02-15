@@ -1,6 +1,6 @@
 from django.urls import path
-from .views import UserSyncView
+from . import views
 
 urlpatterns = [
-    path('sync/', UserSyncView.as_view(), name='user-sync'),
+    path('sync/', views.UserSyncView.as_view(), name='user-sync'),
 ]
