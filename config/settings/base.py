@@ -17,10 +17,12 @@ INSTALLED_APPS = [
     # Third Party
     'rest_framework',
     'corsheaders',
+    'drf-spectacular',
 
     # Local Apps
     'apps.users.apps.UsersConfig',
     'apps.profiles.apps.ProfilesConfig',
+    'apps.vitals.apps.VitalsConfig',
 ]
 
 MIDDLEWARE = [
@@ -65,7 +67,14 @@ REST_FRAMEWORK = {
     ),
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.IsAuthenticated',
-    )
+    ),
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+}
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'Graduation Project API',
+    'DESCRIPTION': 'API documentation for the Graduation Project Backend',
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': False,
 }
 
 LANGUAGE_CODE = 'en-us'

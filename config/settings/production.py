@@ -27,6 +27,10 @@ DATABASES = {
     }
 }
 
+#2.1 DATABASE: CONNECT TO MONGODB
+MONGO_URI = os.environ.get('MONGO_URI', 'mongodb://localhost:27017')
+MONGO_DB_NAME = os.environ.get('MONGO_DB_NAME', 'gp-mongodb-service')
+
 # 3. STATIC FILES
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
