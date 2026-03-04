@@ -162,3 +162,53 @@ class AllRiskEventsView(APIView):
             res['_id'] = str(res['_id'])
             
         return Response(results, status=status.HTTP_200_OK)
+    
+class MobileDashboardView(APIView):
+    """
+    GET /api/v1/vitals/dashboard/{user_id}/
+    Provides a pre-calculated, lightweight summary specifically for the FlutterFlow Home Screen.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, user_id):
+        if request.user.username != user_id:
+             return Response({"error": "Unauthorized"}, status=status.HTTP_403_FORBIDDEN)
+
+        db = get_mongo_db()
+        
+        # 1. Get the single most recent AI Risk Result for the current status
+        latest_result = db.risk_results.find_one(
+            {"user_id": user_id}, 
+            sort=[("server_received_at", -1)]
+        )
+        
+        if not latest_result:
+            return Response({
+                "risk_rate": "N/A",
+                "stress_level": "No Data",
+                "average_hr": 0,
+                "daily_summary": "Please wear your device to start collecting data."
+            }, status=status.HTTP_200_OK)
+
+        # 2. Get the last 10 readings to calculate the "Average HR" for the dashboard chart
+        recent_cursor = db.risk_results.find(
+            {"user_id": user_id}, 
+            sort=[("server_received_at", -1)]
+        ).limit(10)
+        
+        recent_results = list(recent_cursor)
+        
+        # Calculate the average HR from the recent features
+        total_hr = sum(res.get('features', {}).get('hr_mean', 0) for res in recent_results)
+        avg_hr = round(total_hr / len(recent_results)) if recent_results else 0
+
+        # 3. Format the exact JSON payload Khaled needs for his UI
+        dashboard_data = {
+            "risk_rate": latest_result.get("risk_level", "Unknown"), 
+            "stress_level": latest_result.get("risk_level", "Unknown"), # WESAD translates stress to risk
+            "average_hr": avg_hr,
+            "daily_summary": latest_result.get("summary", "No AI summary available yet."),
+            "last_updated": latest_result.get("timestamp")
+        }
+
+        return Response(dashboard_data, status=status.HTTP_200_OK)
