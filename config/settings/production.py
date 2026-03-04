@@ -4,7 +4,7 @@ import json
 import firebase_admin
 from firebase_admin import credentials
 
-DEBUG = False
+DEBUG = True
 
 # 1. SECURITY: GET KEYS FROM DOKPLOY ENVIRONMENT
 SECRET_KEY = os.environ.get('SECRET_KEY')
