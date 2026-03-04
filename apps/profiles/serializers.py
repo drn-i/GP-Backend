@@ -4,5 +4,5 @@ from .models import MedicalProfile
 class MedicalProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = MedicalProfile
-        fields = ['id', 'height', 'weight', 'gender', 'dob']
-        read_only_fields = ['id']
+        fields = '__all__'
+        read_only_fields = ['id', 'user', 'created_at', 'updated_at']
