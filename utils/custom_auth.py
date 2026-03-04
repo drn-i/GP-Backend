@@ -1,5 +1,6 @@
 import os
 from rest_framework.authentication import BaseAuthentication
+from rest_framework import AuthenticationFailed
 from django.contrib.auth.models import User
 
 class StaticAPIKeyAuthentication(BaseAuthentication):
@@ -10,24 +11,28 @@ class StaticAPIKeyAuthentication(BaseAuthentication):
     def authenticate(self, request):
         auth_header = request.headers.get('Authorization')
         if not auth_header:
-            return None # Move on to Firebase Auth if no header exists
+            return None
 
-        # Extract the token (handles "Bearer <token>" or just "<token>")
+        # Extract the token
         token = auth_header.replace("Bearer ", "").strip()
-        print(f"--- INCOMING TOKEN SEEN BY DJANGO '{token}' ---") # Debug print to confirm token reception
+        expected_n8n_token = os.environ.get('N8N_MASTER_TOKEN', 'amer_local_test_key')
+        
+        # --- THE DEBUG TRAP ---
+        # If the token doesn't match Firebase format (doesn't have dots), 
+        # and it's not empty, force Django to print the mismatch!
+        if "." not in token:
+            raise AuthenticationFailed(f"DEBUG -> Django Expected: '{expected_n8n_token}' | Django Received: '{token}'")
+
         # 1. N8N Service Account (Amer)
-        if token == os.environ.get('N8N_MASTER_TOKEN', 'amer_local_test_key'):
-            # Get or create a dummy user for the server pipeline
+        if token == expected_n8n_token:
             user, _ = User.objects.get_or_create(username="n8n_service_account")
-            user.is_staff = True # Grant admin privileges so Amer can push data for ANY user (S10, S11, etc.)
+            user.is_staff = True 
             return (user, "StaticToken")
 
         # 2. Eyad Test Account
         if token == os.environ.get('EYAD_TEST_TOKEN', 'eyad_local_test_key'):
-            # Eyad acts as the subject 'S10' to test standard mobile fetching
             user, _ = User.objects.get_or_create(username="S10") 
             user.is_staff = False
             return (user, "StaticToken")
 
-        # If the token doesn't match these two, return None so Firebase Auth can try to decode it
         return None
