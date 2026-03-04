@@ -5,16 +5,26 @@ from django.contrib.auth.models import User
 
 class StaticAPIKeyAuthentication(BaseAuthentication):
     def authenticate(self, request):
-        # DRF's bulletproof way to safely grab the header
         auth_header = get_authorization_header(request).decode('utf-8')
         
         if not auth_header:
-            return None # Move on to Firebase Auth if no header exists
+            return None 
 
-        # Extract the token
         token = auth_header.replace("Bearer ", "").strip()
-        expected_n8n_token = os.environ.get('N8N_MASTER_TOKEN', 'amer_local_test_key')
-        expected_eyad_token = os.environ.get('EYAD_TEST_TOKEN', 'eyad_local_test_key')
+        expected_n8n_token = os.environ.get('N8N_MASTER_TOKEN', 'amer_local_test_key').strip()
+        expected_eyad_token = os.environ.get('EYAD_TEST_TOKEN', 'eyad_local_test_key').strip()
+
+        # --- THE DEBUG TRAP ---
+        # Firebase JWTs always contain dots (.). If there are no dots, 
+        # we know it's Amer or Eyad trying to use a static token!
+        if "." not in token:
+            if token != expected_n8n_token and token != expected_eyad_token:
+                # This explicitly crashes the request and sends this exact message back to n8n
+                raise AuthenticationFailed(
+                    f"DEBUG MATCH FAILED! "
+                    f"Django Expected: '{expected_n8n_token}' (Length: {len(expected_n8n_token)}) | "
+                    f"Amer Sent: '{token}' (Length: {len(token)})"
+                )
 
         # 1. N8N Service Account (Amer)
         if token == expected_n8n_token:
@@ -28,5 +38,4 @@ class StaticAPIKeyAuthentication(BaseAuthentication):
             user.is_staff = False
             return (user, "StaticToken")
 
-        # If it has a header but it doesn't match our static keys, let Firebase try it!
         return None
