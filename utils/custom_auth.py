@@ -1,7 +1,10 @@
 import os
 from rest_framework.authentication import BaseAuthentication, get_authorization_header
 from rest_framework.exceptions import AuthenticationFailed
-from django.contrib.auth.models import User
+from django.contrib.auth import get_user_model
+
+# This dynamically loads your custom users.User model!
+User = get_user_model()
 
 class StaticAPIKeyAuthentication(BaseAuthentication):
     def authenticate(self, request):
@@ -14,12 +17,8 @@ class StaticAPIKeyAuthentication(BaseAuthentication):
         expected_n8n_token = os.environ.get('N8N_MASTER_TOKEN', 'amer_local_test_key').strip()
         expected_eyad_token = os.environ.get('EYAD_TEST_TOKEN', 'eyad_local_test_key').strip()
 
-        # --- THE DEBUG TRAP ---
-        # Firebase JWTs always contain dots (.). If there are no dots, 
-        # we know it's Amer or Eyad trying to use a static token!
         if "." not in token:
             if token != expected_n8n_token and token != expected_eyad_token:
-                # This explicitly crashes the request and sends this exact message back to n8n
                 raise AuthenticationFailed(
                     f"DEBUG MATCH FAILED! "
                     f"Django Expected: '{expected_n8n_token}' (Length: {len(expected_n8n_token)}) | "
