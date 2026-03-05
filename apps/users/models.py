@@ -46,6 +46,7 @@ class User(AbstractBaseUser, PermissionsMixin):
     middle_name = models.CharField(max_length=50, blank=True, null=True)
     last_name = models.CharField(max_length=50, blank=True, null=True)
     email = models.EmailField(unique=True, max_length=100)
+    phone_number = models.CharField(max_length=20, blank=True, null=True)
     
     # The 'has' relationship (Foreign Key to Role)
     role = models.ForeignKey(Role, on_delete=models.SET_NULL, null=True, blank=True)

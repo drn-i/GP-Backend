@@ -1,0 +1,159 @@
+openapi: 3.0.3
+info:
+  title: Graduation Project API
+  version: 1.0.0
+  description: API documentation for the Graduation Project Backend
+paths:
+  /api/dashboard/{user_id}/:
+    get:
+      operationId: dashboard_retrieve
+      description: |-
+        GET /api/v1/vitals/dashboard/{user_id}/
+        Provides a pre-calculated, lightweight summary specifically for the FlutterFlow Home Screen.
+      parameters:
+      - in: path
+        name: user_id
+        schema:
+          type: string
+        required: true
+      tags:
+      - dashboard
+      responses:
+        '200':
+          description: No response body
+  /api/live-vitals/{user_id}/:
+    get:
+      operationId: live_vitals_retrieve
+      description: |-
+        GET /api/live-vitals/{user_id}/?limit=30
+        Returns an array of recent vitals to power the FlutterFlow's Live Data and Trends charts.
+      parameters:
+      - in: path
+        name: user_id
+        schema:
+          type: string
+        required: true
+      tags:
+      - live-vitals
+      responses:
+        '200':
+          description: No response body
+  /api/risk-events/:
+    get:
+      operationId: risk_events_retrieve
+      description: |-
+        GET /api/risk-events/
+        Fetches the latest risk events across ALL users for Eyad's Streamlit Dashboard.
+      tags:
+      - risk-events
+      responses:
+        '200':
+          description: No response body
+  /api/risk-results/:
+    post:
+      operationId: risk_results_create
+      description: |-
+        POST /api/v1/risk-results/
+        Handles the 27-feature WESAD dataset payloads from the n8n pipeline.
+      tags:
+      - risk-results
+      responses:
+        '200':
+          description: No response body
+  /api/summary/{user_id}/:
+    get:
+      operationId: summary_retrieve
+      description: |-
+        GET /api/v1/summary/{user_id}/
+        Fetches the historical risk results so Khaled can display them on mobile charts.
+      parameters:
+      - in: path
+        name: user_id
+        schema:
+          type: string
+        required: true
+      tags:
+      - summary
+      responses:
+        '200':
+          description: No response body
+  /api/v1/profiles/me/:
+    get:
+      operationId: v1_profiles_me_retrieve
+      description: |-
+        GET /api/v1/profiles/me/  -> Fetch my profile
+        POST /api/v1/profiles/me/ -> Create my profile
+        PUT /api/v1/profiles/me/  -> Update my profile
+      tags:
+      - v1
+      responses:
+        '200':
+          description: No response body
+    post:
+      operationId: v1_profiles_me_create
+      description: |-
+        GET /api/v1/profiles/me/  -> Fetch my profile
+        POST /api/v1/profiles/me/ -> Create my profile
+        PUT /api/v1/profiles/me/  -> Update my profile
+      tags:
+      - v1
+      responses:
+        '200':
+          description: No response body
+    put:
+      operationId: v1_profiles_me_update
+      description: |-
+        GET /api/v1/profiles/me/  -> Fetch my profile
+        POST /api/v1/profiles/me/ -> Create my profile
+        PUT /api/v1/profiles/me/  -> Update my profile
+      tags:
+      - v1
+      responses:
+        '200':
+          description: No response body
+  /api/v1/profiles/update-fcm-token/:
+    post:
+      operationId: v1_profiles_update_fcm_token_create
+      description: POST /api/v1/profiles/update-fcm-token/ -> Update the user's FCM
+        token for push notifications
+      tags:
+      - v1
+      responses:
+        '200':
+          description: No response body
+  /api/v1/users/health/:
+    get:
+      operationId: v1_users_health_retrieve
+      description: |-
+        GET /api/v1/users/health
+        This endpoint is for health checks.
+      tags:
+      - v1
+      security:
+      - {}
+      responses:
+        '200':
+          description: No response body
+  /api/v1/users/sync/:
+    post:
+      operationId: v1_users_sync_create
+      description: |-
+        POST /api/v1/users/sync
+        This endpoint bridges Firebase and MySQL.
+      tags:
+      - v1
+      security:
+      - {}
+      responses:
+        '200':
+          description: No response body
+  /api/vitals/:
+    post:
+      operationId: vitals_create
+      description: POST /api/v1/vitals/ -> raw vitals endpoint
+      tags:
+      - vitals
+      responses:
+        '200':
+          description: No response body
+components: {}

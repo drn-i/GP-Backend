@@ -76,6 +76,5 @@ class MedicalProfile(models.Model):
     doctors_notes = models.TextField(help_text="Step 9: Doctor's Notes or Recommendations", blank=True, null=True)
     s9_additional_notes = models.TextField(help_text="Step 9: Additional Notes", blank=True, null=True)
     
-    fcm_token = models.CharField(max_length=255, blank=True, null=True, help_text="Firebase Device Token for Push Notifications")
     def __str__(self):
         return f"Profile: {self.user.username}"
