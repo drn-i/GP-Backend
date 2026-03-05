@@ -2,6 +2,8 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
+from firebase_admin import messaging
+from apps.profiles.models import MedicalProfile
 from utils.mongo_client import get_mongo_db
 from datetime import datetime, timezone
 
@@ -108,6 +110,25 @@ class RiskResultIngestionView(APIView):
             risk_level = record.get("risk_level", "Low")
             if risk_level in ["High", "Critical"]:
                 alerts_triggered += 1
+
+                try:
+                    profile = MedicalProfile.objects.get(user__username=record['user_id'])
+                    if profile.fcm_token:
+                        message = messaging.Message(
+                            notification=messaging.Notification(
+                                title=f"Health Alert: {risk_level} Stress Alert Detected",
+                                body=f"Your recent vitals indicate a {risk_level.lower()} physiological stress. Please check the app for your AI summary."
+                            ),
+                            token=profile.fcm_token,
+                        )
+                        response = messaging.send(message)
+                        print(f"Successfully sent alert to {record['user_id']} with FCM token {response}")
+                    else:
+                        print(f"No FCM token found for user {record['user_id']}. Cannot send alert.")
+                except MedicalProfile.DoesNotExist:
+                    print(f"No medical profile found for user {record['user_id']}. Cannot send alert.")
+                except Exception as e:
+                    print(f"Firebase Push Failed: {str(e)}")
 
         return Response({
             "status": "success",
