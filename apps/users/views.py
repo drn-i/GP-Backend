@@ -17,53 +17,56 @@ class UserSyncView(APIView):
     authentication_classes = []  
 
     def post(self, request):
-        # 1. THE DEBUG PRINTS (Moved inside the actual request handler)
         auth_header = request.headers.get('Authorization')
-        print(f"--- DEBUG START ---")
-        print(f"Header: {auth_header}")
-        print(f"--- DEBUG END ---")
         
         try:
             decoded_token = verify_firebase_token(request)
             if not decoded_token:
                 return Response({"error": "Invalid token payload"}, status=401)
         except Exception as e:
-            # 2. CATCHING THE 401 REASON
-            # This will print the exact reason your authentication.py rejected the token!
             print(f"TOKEN REJECTED REASON: {str(e)}") 
             return Response({"error": str(e)}, status=401)
             
         uid = decoded_token.get('uid')
-        email = decoded_token.get('email', '')
+        # Fallback to request.data if Firebase token doesn't have the email
+        email = decoded_token.get('email', request.data.get('email', ''))
         phone_number = decoded_token.get('phone_number', '')
 
-        # Syncing Firebase UID with a MySQL record
-        user, created = User.objects.get_or_create(
-            username=uid, 
-            defaults={'email': email, 'phone_number': phone_number, 'is_active': True}
-        )
+        # THE FIX: Safely extract names from the JSON body
+        display_name = request.data.get('display_name', 'Unknown User')
+        name_parts = display_name.split(' ', 1)
+        first_name = name_parts[0]
+        last_name = name_parts[1] if len(name_parts) > 1 else ''
 
-        # Assign default role to new users
-        if created:
-            patient_role, _ = Role.objects.get_or_create(role_name='Patient')
-            user.role = patient_role
-            user.save()
+        try:
+            # Syncing Firebase UID with a MySQL record using ALL required fields
+            user, created = User.objects.get_or_create(
+                username=uid, 
+                defaults={
+                    'email': email, 
+                    'phone_number': phone_number, 
+                    'is_active': True,
+                    'first_name': first_name,
+                    'last_name': last_name
+                }
+            )
 
-        return Response({
-            "status": "success",
-            "local_id": user.id,
-            "role": user.role.role_name if user.role else None,
-            "created": created
-        }, status=status.HTTP_200_OK)
-    
+            if created:
+                # Give Firebase users an unusable password so the DB doesn't crash on the password_hash field
+                user.set_unusable_password()
+                
+                # Assign default role
+                patient_role, _ = Role.objects.get_or_create(role_name='Patient')
+                user.role = patient_role
+                user.save()
 
-class UserHealthView(APIView):
-    """
-    GET /api/v1/users/health
-    This endpoint is for health checks.
-    """
-    permission_classes = [AllowAny]
-    authentication_classes = []
-
-    def get(self, request):
-        return Response({"status": "ok"}, status=status.HTTP_200_OK)
+            return Response({
+                "status": "success",
+                "local_id": user.id,
+                "role": user.role.role_name if user.role else None,
+                "created": created
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            # If the database ever crashes again, it will now tell you EXACTLY why instead of a silent 500
+            return Response({"error": f"Database Sync Failed: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
