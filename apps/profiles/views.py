@@ -6,60 +6,31 @@ from .serializers import MedicalProfileSerializer
 
 class MyProfileManageView(APIView):
     """
-    GET /api/v1/profiles/me/  -> Fetch my profile
-    POST /api/v1/profiles/me/ -> Create my profile
+    GET /api/v1/profiles/me/  -> Fetch my profile (creates a blank one automatically if missing)
     PUT /api/v1/profiles/me/  -> Update my profile
     """
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        try:
-            profile = MedicalProfile.objects.get(user=request.user)
-            serializer = MedicalProfileSerializer(profile)
-            return Response(serializer.data, status=status.HTTP_200_OK)
-        except MedicalProfile.DoesNotExist:
-            return Response(
-                {"error": "PROFILE_NOT_FOUND: No profile exists for this user."}, 
-                status=status.HTTP_404_NOT_FOUND
-            )
-
-    def post(self, request):
-        if MedicalProfile.objects.filter(user=request.user).exists():
-            return Response(
-                {"error": "PROFILE_EXISTS: A medical profile has already been created for this user."}, 
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        print("--- INCOMING FLUTTERFLOW DATA ---")
-        print(request.data)
+        profile, created = MedicalProfile.objects.get_or_create(user=request.user)
         
-        serializer = MedicalProfileSerializer(data=request.data)
-        
-        if not serializer.is_valid():
-            print("--- SERIALIZER REJECTED THE DATA! ---")
-            print("EXACT ERRORS:", serializer.errors) 
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-            
-        serializer.save(user=request.user)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+        serializer = MedicalProfileSerializer(profile)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
     def put(self, request):
-        try:
-            profile = MedicalProfile.objects.get(user=request.user)
-        except MedicalProfile.DoesNotExist:
-            return Response(
-                {"error": "PROFILE_NOT_FOUND: Cannot update a profile that does not exist."}, 
-                status=status.HTTP_404_NOT_FOUND
-            )
+        profile, created = MedicalProfile.objects.get_or_create(user=request.user)
 
-        # 'partial=True' allows FlutterFlow to update just one or two fields at a time
         serializer = MedicalProfileSerializer(profile, data=request.data, partial=True)
+        
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data, status=status.HTTP_200_OK)
         
+        print("--- SERIALIZER REJECTED THE DATA! ---")
+        print("EXACT ERRORS:", serializer.errors) 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
+
 class UpdateFCMTokenView(APIView):
     """
     POST /api/v1/profiles/update-fcm-token/ -> Update the user's FCM token for push notifications
