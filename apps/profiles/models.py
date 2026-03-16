@@ -76,7 +76,7 @@ class MedicalProfile(models.Model):
     last_eye_examination = models.DateField(help_text="Step 9: Last Eye Examination", blank=True, null=True)
     doctors_notes = models.TextField(help_text="Step 9: Doctor's Notes or Recommendations", blank=True, null=True)
     s9_additional_notes = models.TextField(help_text="Step 9: Additional Notes", blank=True, null=True)
-    clincian_access = models.BooleanField(default=False, help_text="Allow health reports to be shared securely with a clinician")
+    clinician_access = models.BooleanField(default=False, help_text="Allow health reports to be shared securely with a clinician")
     
     def __str__(self):
         return f"Profile: {self.user.username}"
