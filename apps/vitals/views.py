@@ -7,7 +7,7 @@ from apps.profiles.models import MedicalProfile
 from utils.mongo_client import get_mongo_db
 from datetime import datetime, timezone, timedelta
 # Serializer for validating incoming risk result data
-from .serializers import RiskResultSerializer
+from .serializers import RiskResultSerializer, Segment1ResultSerializer
 
 class VitalsIngestionView(APIView):
     """POST /api/v1/vitals/ -> raw vitals endpoint"""
@@ -136,6 +136,68 @@ class RiskResultIngestionView(APIView):
             "inserted_ids": inserted_ids
         }, status=status.HTTP_201_CREATED)
 
+# Segment 1 Result Ingestion View
+class Segment1ResultIngestionView(APIView):
+    """
+    POST /api/segment1-results/
+    Stores aligned Segment 1 inference results from Jetson/Runpod.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        payload = request.data
+        records = payload if isinstance(payload, list) else [payload]
+
+        serializer = Segment1ResultSerializer(data=records, many=True)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        valid_records = serializer.validated_data
+        db = get_mongo_db()
+        inserted_ids = []
+
+        for record in valid_records:
+            if request.user.username != record["user_id"] and not request.user.is_staff:
+                return Response({"error": "Unauthorized data submission"}, status=status.HTTP_403_FORBIDDEN)
+
+            record["server_received_at"] = datetime.now(timezone.utc)
+            result = db.segment1_results.insert_one(record)
+            inserted_ids.append(str(result.inserted_id))
+
+        return Response({
+            "status": "success",
+            "records_processed": len(inserted_ids),
+            "inserted_ids": inserted_ids
+        }, status=status.HTTP_201_CREATED)
+
+# Segment 1 Result List View
+class Segment1ResultListView(APIView):
+    """
+    GET /api/segment1-results/<user_id>/?limit=10
+    Returns recent aligned Segment 1 results.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, user_id):
+        if request.user.username != user_id and not request.user.is_staff:
+            return Response({"error": "Unauthorized data access"}, status=status.HTTP_403_FORBIDDEN)
+
+        try:
+            limit = int(request.query_params.get("limit", 10))
+        except ValueError:
+            limit = 10
+
+        db = get_mongo_db()
+        cursor = db.segment1_results.find(
+            {"user_id": user_id},
+            sort=[("server_received_at", -1)]
+        ).limit(limit)
+
+        results = list(cursor)
+        for res in results:
+            res["_id"] = str(res["_id"])
+
+        return Response(results, status=status.HTTP_200_OK)
 
 class RiskSummaryView(APIView):
     """
@@ -168,7 +230,6 @@ class RiskSummaryView(APIView):
             
         return Response(results, status=status.HTTP_200_OK)
     
-
 class AllRiskEventsView(APIView):
     """
     GET /api/risk-events/

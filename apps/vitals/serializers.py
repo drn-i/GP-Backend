@@ -46,3 +46,62 @@ class RiskResultSerializer(serializers.Serializer):
     confidence = serializers.FloatField(required=False)
     summary = serializers.CharField(required=False, allow_blank=True)
     recommendation = serializers.CharField(required=False, allow_blank=True)
+
+# Segment 1 Aligned Features Serializer with EmotiBit Features
+class Segment1AlignedFeaturesSerializer(serializers.Serializer):
+    EDA_mean = serializers.FloatField(allow_null=True, required=False)
+    EDA_std = serializers.FloatField(allow_null=True, required=False)
+    EDA_min = serializers.FloatField(allow_null=True, required=False)
+    EDA_max = serializers.FloatField(allow_null=True, required=False)
+
+    BVP_std = serializers.FloatField(allow_null=True, required=False)
+    BVP_peak_freq = serializers.FloatField(allow_null=True, required=False)
+
+    TEMP_mean = serializers.FloatField(allow_null=True, required=False)
+    TEMP_std = serializers.FloatField(allow_null=True, required=False)
+    TEMP_slope = serializers.FloatField(allow_null=True, required=False)
+
+    ACC_x_std = serializers.FloatField(allow_null=True, required=False)
+    ACC_y_std = serializers.FloatField(allow_null=True, required=False)
+    ACC_z_std = serializers.FloatField(allow_null=True, required=False)
+
+    net_acc_mean = serializers.FloatField(allow_null=True, required=False)
+    net_acc_std = serializers.FloatField(allow_null=True, required=False)
+    net_acc_max = serializers.FloatField(allow_null=True, required=False)
+    net_acc_min = serializers.FloatField(allow_null=True, required=False)
+
+    age = serializers.FloatField(allow_null=True, required=False)
+    height = serializers.FloatField(allow_null=True, required=False)
+    weight = serializers.FloatField(allow_null=True, required=False)
+
+
+class Segment1LLMResultSerializer(serializers.Serializer):
+    stress_detected = serializers.BooleanField()
+    confidence = serializers.FloatField(required=False, allow_null=True)
+    reasoning = serializers.CharField(required=False, allow_blank=True)
+    contributing_signals = serializers.ListField(
+        child=serializers.CharField(),
+        required=False
+    )
+    summary = serializers.CharField(required=False, allow_blank=True)
+
+
+class Segment1RunpodSerializer(serializers.Serializer):
+    request_id = serializers.CharField(required=False, allow_blank=True)
+    status = serializers.CharField(required=False, allow_blank=True)
+    delay_time_ms = serializers.IntegerField(required=False, allow_null=True)
+    execution_time_ms = serializers.IntegerField(required=False, allow_null=True)
+    worker_id = serializers.CharField(required=False, allow_blank=True)
+    endpoint_id = serializers.CharField(required=False, allow_blank=True)
+
+
+class Segment1ResultSerializer(serializers.Serializer):
+    user_id = serializers.CharField(max_length=128)
+    timestamp = serializers.DateTimeField()
+    window = serializers.DictField()
+    feature_alignment_version = serializers.CharField(required=False, allow_blank=True)
+    prompt_source = serializers.CharField(required=False, allow_blank=True)
+    prompt_version = serializers.CharField(required=False, allow_blank=True)
+    features_aligned = Segment1AlignedFeaturesSerializer(required=False)
+    llm_result = Segment1LLMResultSerializer()
+    runpod = Segment1RunpodSerializer(required=False)
