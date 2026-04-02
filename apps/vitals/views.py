@@ -5,7 +5,8 @@ from rest_framework.permissions import IsAuthenticated
 from firebase_admin import messaging
 from apps.profiles.models import MedicalProfile
 from utils.mongo_client import get_mongo_db
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
+from collections import Counter
 # Serializer for validating incoming risk result data
 from .serializers import RiskResultSerializer, Segment1ResultSerializer
 
@@ -39,37 +40,44 @@ class VitalsIngestionView(APIView):
             "inserted_count": len(result.inserted_ids)
         }, status=status.HTTP_201_CREATED)
 
-
 class LiveVitalsView(APIView):
     """
     GET /api/live-vitals/{user_id}/?limit=30
-    Returns an array of recent vitals to power the FlutterFlow's Live Data and Trends charts.
+    Returns recent Segment 1 aligned results first, falling back to legacy risk_results.
     """
     permission_classes = [IsAuthenticated]
 
     def get(self, request, user_id):
-        if request.user.username != user_id:
-             return Response({"error": "Unauthorized data access"}, status=status.HTTP_403_FORBIDDEN)
+        if request.user.username != user_id and not request.user.is_staff:
+            return Response({"error": "Unauthorized data access"}, status=status.HTTP_403_FORBIDDEN)
 
-        try: 
+        try:
             limit = int(request.query_params.get('limit', 1))
         except ValueError:
             limit = 1
 
         db = get_mongo_db()
-        
-        cursor = db.risk_results.find(
-            {"user_id": user_id}, 
+
+        # Prefer Segment 1 aligned results
+        cursor = db.segment1_results.find(
+            {"user_id": user_id},
             sort=[("server_received_at", -1)]
         ).limit(limit)
 
         results = list(cursor)
-        
-        # Format the Mongo IDs and return the array for the FlutterFlow graphs!
+
+        # Fallback to legacy collection if no Segment 1 results exist
+        if not results:
+            cursor = db.risk_results.find(
+                {"user_id": user_id},
+                sort=[("server_received_at", -1)]
+            ).limit(limit)
+            results = list(cursor)
+
         for res in results:
-            res['_id'] = str(res['_id'])
-            
-        return Response(results, status=status.HTTP_200_OK)  
+            res["_id"] = str(res["_id"])
+
+        return Response(results, status=status.HTTP_200_OK)
 
 class RiskResultIngestionView(APIView):
     """
@@ -201,78 +209,97 @@ class Segment1ResultListView(APIView):
 
 class RiskSummaryView(APIView):
     """
-    GET /api/v1/summary/{user_id}/
-    Fetches the historical risk results so Khaled can display them on mobile charts.
+    GET /api/summary/{user_id}/
+    Returns the latest 10 Segment 1 aligned results first, falling back to legacy risk_results.
     """
     permission_classes = [IsAuthenticated]
 
     def get(self, request, user_id):
-        # Security: Prevent a user from fetching someone else's history
         if request.user.username != user_id and not request.user.is_staff:
-             return Response({"error": "Unauthorized data access"}, status=status.HTTP_403_FORBIDDEN)
+            return Response({"error": "Unauthorized data access"}, status=status.HTTP_403_FORBIDDEN)
 
         db = get_mongo_db()
-        
-        # Fetch the 10 most recent risk evaluations for the chart
-        cursor = db.risk_results.find(
-            {"user_id": user_id}, 
-            sort=[("server_received_at", -1)] 
+
+        cursor = db.segment1_results.find(
+            {"user_id": user_id},
+            sort=[("server_received_at", -1)]
         ).limit(10)
-        
+
         results = list(cursor)
-        
+
+        if not results:
+            cursor = db.risk_results.find(
+                {"user_id": user_id},
+                sort=[("server_received_at", -1)]
+            ).limit(10)
+            results = list(cursor)
+
         if not results:
             return Response({"message": "No risk history found"}, status=status.HTTP_404_NOT_FOUND)
-            
-        # Fix the MongoDB ID serialization issue
+
         for res in results:
-            res['_id'] = str(res['_id'])
-            
+            res["_id"] = str(res["_id"])
+
         return Response(results, status=status.HTTP_200_OK)
     
 class AllRiskEventsView(APIView):
-    """
-    GET /api/risk-events/
-    Fetches the latest risk events across ALL users for Eyad's Streamlit Dashboard.
-    """
-    permission_classes = [IsAuthenticated] 
+    permission_classes = [IsAuthenticated]
 
-    def get(self, request): 
+    def get(self, request):
         db = get_mongo_db()
-        
-        # Fetch the 50 most recent events across the entire system
-        cursor = db.risk_results.find(
-            {}, 
-            sort=[("server_received_at", -1)] 
-        ).limit(50)
-        
-        results = list(cursor)
-        
+
+        results = list(
+            db.segment1_results.find({}, sort=[("server_received_at", -1)]).limit(50)
+        )
+
+        if not results:
+            results = list(
+                db.risk_results.find({}, sort=[("server_received_at", -1)]).limit(50)
+            )
+
         for res in results:
-            res['_id'] = str(res['_id'])
-            
-        return Response(results, status=status.HTTP_200_OK) 
+            res["_id"] = str(res["_id"])
+
+        return Response(results, status=status.HTTP_200_OK)
 
 class MobileDashboardView(APIView):
     """
-    GET /api/v1/vitals/dashboard/{user_id}/
-    Provides a pre-calculated, lightweight summary specifically for the FlutterFlow Home Screen.
+    GET /api/dashboard/{user_id}/
+    Returns dashboard data from Segment 1 aligned results first, falling back to legacy risk_results.
     """
     permission_classes = [IsAuthenticated]
 
     def get(self, request, user_id):
-        if request.user.username != user_id:
-             return Response({"error": "Unauthorized"}, status=status.HTTP_403_FORBIDDEN)
+        if request.user.username != user_id and not request.user.is_staff:
+            return Response({"error": "Unauthorized"}, status=status.HTTP_403_FORBIDDEN)
 
         db = get_mongo_db()
-        
-        # 1. Get the single most recent AI Risk Result for the current status
-        latest_result = db.risk_results.find_one(
-            {"user_id": user_id}, 
+
+        latest_result = db.segment1_results.find_one(
+            {"user_id": user_id},
             sort=[("server_received_at", -1)]
         )
-        
-        if not latest_result:
+
+        if latest_result:
+            llm_result = latest_result.get("llm_result", {})
+            stress_detected = llm_result.get("stress_detected", False)
+
+            dashboard_data = {
+                "risk_rate": "High" if stress_detected else "Low",
+                "stress_level": "High" if stress_detected else "Low",
+                "average_hr": 0,
+                "daily_summary": llm_result.get("summary", "No AI summary available yet."),
+                "last_updated": latest_result.get("timestamp")
+            }
+            return Response(dashboard_data, status=status.HTTP_200_OK)
+
+        # Fallback to legacy risk_results
+        latest_legacy = db.risk_results.find_one(
+            {"user_id": user_id},
+            sort=[("server_received_at", -1)]
+        )
+
+        if not latest_legacy:
             return Response({
                 "risk_rate": "N/A",
                 "stress_level": "No Data",
@@ -280,27 +307,22 @@ class MobileDashboardView(APIView):
                 "daily_summary": "Please wear your device to start collecting data."
             }, status=status.HTTP_200_OK)
 
-        # 2. Get the last 10 readings to calculate the "Average HR" for the dashboard chart
         recent_cursor = db.risk_results.find(
-            {"user_id": user_id}, 
+            {"user_id": user_id},
             sort=[("server_received_at", -1)]
         ).limit(10)
-        
         recent_results = list(recent_cursor)
-        
-        # Calculate the average HR from the recent features
-        total_hr = sum(res.get('features', {}).get('hr_mean', 0) for res in recent_results)
+
+        total_hr = sum(res.get("features", {}).get("hr_mean", 0) for res in recent_results)
         avg_hr = round(total_hr / len(recent_results)) if recent_results else 0
 
-        # 3. Format the exact JSON payload Khaled needs for his UI
         dashboard_data = {
-            "risk_rate": latest_result.get("risk_level", "Unknown"), 
-            "stress_level": latest_result.get("risk_level", "Unknown"), # WESAD translates stress to risk
+            "risk_rate": latest_legacy.get("risk_level", "Unknown"),
+            "stress_level": latest_legacy.get("risk_level", "Unknown"),
             "average_hr": avg_hr,
-            "daily_summary": latest_result.get("summary", "No AI summary available yet."),
-            "last_updated": latest_result.get("timestamp")
+            "daily_summary": latest_legacy.get("summary", "No AI summary available yet."),
+            "last_updated": latest_legacy.get("timestamp")
         }
-
         return Response(dashboard_data, status=status.HTTP_200_OK)
 
 
@@ -346,45 +368,51 @@ class SupportChatView(APIView):
 # -------------------------------------------------------------------
 #  DAILY ANALYTICS API (Reports Dashboard)
 # -------------------------------------------------------------------
+
 class DailyAnalyticsView(APIView):
-    """ GET /api/analytics/daily/{user_id}/?date=YYYY-MM-DD """
     permission_classes = [IsAuthenticated]
 
     def get(self, request, user_id):
-        if request.user.username != user_id:
-             return Response({"error": "Unauthorized"}, status=status.HTTP_403_FORBIDDEN)
+        if request.user.username != user_id and not request.user.is_staff:
+            return Response({"error": "Unauthorized"}, status=status.HTTP_403_FORBIDDEN)
 
-        target_date_str = request.query_params.get('date', datetime.now(timezone.utc).strftime('%Y-%m-%d'))
+        date_str = request.query_params.get("date")
+        if date_str:
+            target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+        else:
+            target_date = datetime.now(timezone.utc).date()
+
+        start_dt = datetime.combine(target_date, datetime.min.time(), tzinfo=timezone.utc)
+        end_dt = start_dt + timedelta(days=1)
+
         db = get_mongo_db()
-        
-        # Search MongoDB for any records containing this exact date string in the timestamp
-        cursor = db.risk_results.find({
+
+        results = list(db.segment1_results.find({
             "user_id": user_id,
-            "timestamp": {"$regex": f"^{target_date_str}"}
-        })
-        results = list(cursor)
+            "server_received_at": {"$gte": start_dt, "$lt": end_dt}
+        }))
 
         if not results:
-             return Response({
-                 "date": target_date_str,
-                 "avg_hr": 0, "stress_level": "No Data", "activity_level": "No Data",
-                 "summary": "No vitals recorded for this date."
-             }, status=status.HTTP_200_OK)
+            return Response({
+                "date": target_date.isoformat(),
+                "avg_hr": 0,
+                "stress_level": "No Data",
+                "activity_level": "No Data",
+                "summary": "No Segment 1 results recorded for this date."
+            }, status=status.HTTP_200_OK)
 
-        # Calculate averages for the day
-        total_hr = sum(r.get('features', {}).get('hr_mean', 0) for r in results)
-        avg_hr = int(total_hr / len(results))
-        
-        # Get the most common risk level for the day
-        risk_levels = [r.get('risk_level', 'Low') for r in results]
-        predominant_risk = max(set(risk_levels), key=risk_levels.count)
+        labels = [
+            "High" if r.get("llm_result", {}).get("stress_detected") else "Low"
+            for r in results
+        ]
+        dominant = Counter(labels).most_common(1)[0][0]
 
         return Response({
-            "date": target_date_str,
-            "avg_hr": avg_hr,
-            "stress_level": predominant_risk,
-            "activity_level": "Active" if avg_hr > 80 else "Normal",
-            "summary": f"Your vitals were generally stable today with a predominant stress level of {predominant_risk}."
+            "date": target_date.isoformat(),
+            "avg_hr": 0,
+            "stress_level": dominant,
+            "activity_level": "Normal",
+            "summary": f"Segment 1 results for this date were predominantly {dominant} stress."
         }, status=status.HTTP_200_OK)
 
 
@@ -392,46 +420,35 @@ class DailyAnalyticsView(APIView):
 #  WEEKLY TRENDS API (Charts & Graphs)
 # -------------------------------------------------------------------
 class WeeklyAnalyticsView(APIView):
-    """ GET /api/analytics/weekly/{user_id}/ """
     permission_classes = [IsAuthenticated]
 
     def get(self, request, user_id):
-        if request.user.username != user_id:
-             return Response({"error": "Unauthorized"}, status=status.HTTP_403_FORBIDDEN)
+        if request.user.username != user_id and not request.user.is_staff:
+            return Response({"error": "Unauthorized"}, status=status.HTTP_403_FORBIDDEN)
 
         db = get_mongo_db()
-        seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
-        
-        # Get all records from the last 7 days
-        cursor = db.risk_results.find({
+        now = datetime.now(timezone.utc)
+        seven_days_ago = now - timedelta(days=7)
+
+        results = list(db.segment1_results.find({
             "user_id": user_id,
             "server_received_at": {"$gte": seven_days_ago}
-        })
-        results = list(cursor)
+        }))
 
-        # 1. Bar Chart Data (Events per day of the week)
-        events_per_day = {"Mon": 0, "Tue": 0, "Wed": 0, "Thu": 0, "Fri": 0, "Sat": 0, "Sun": 0}
-        
-        # 2. Pie Chart Data (Count trigger types based on risk_level)
-        triggers = {"Class Stress": 0, "Low Movement": 0, "Other": 0}
+        weekdays = {"Mon": 0, "Tue": 0, "Wed": 0, "Thu": 0, "Fri": 0, "Sat": 0, "Sun": 0}
+        pie = {"Stress": 0, "Not Stress": 0}
 
         for r in results:
-            # Map the timestamp to a day of the week
-            if 'server_received_at' in r:
-                day_name = r['server_received_at'].strftime('%a') # Returns 'Mon', 'Tue', etc.
-                if day_name in events_per_day:
-                    events_per_day[day_name] += 1
-            
-            # Simple grouping logic for the Pie Chart based on AI risk levels
-            risk = r.get("risk_level", "Low")
-            if risk == "Critical":
-                triggers["Class Stress"] += 1
-            elif risk == "High":
-                triggers["Low Movement"] += 1
+            ts = r.get("server_received_at")
+            if ts:
+                weekdays[ts.strftime("%a")] += 1
+
+            if r.get("llm_result", {}).get("stress_detected"):
+                pie["Stress"] += 1
             else:
-                triggers["Other"] += 1
+                pie["Not Stress"] += 1
 
         return Response({
-            "bar_chart_data": events_per_day,
-            "pie_chart_data": triggers
+            "bar_chart_data": weekdays,
+            "pie_chart_data": pie
         }, status=status.HTTP_200_OK)
