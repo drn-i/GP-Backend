@@ -146,10 +146,6 @@ class RiskResultIngestionView(APIView):
 
 # Segment 1 Result Ingestion View
 class Segment1ResultIngestionView(APIView):
-    """
-    POST /api/segment1-results/
-    Stores aligned Segment 1 inference results from Jetson/Runpod.
-    """
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
@@ -162,20 +158,30 @@ class Segment1ResultIngestionView(APIView):
 
         valid_records = serializer.validated_data
         db = get_mongo_db()
-        inserted_ids = []
+
+        processed = 0
 
         for record in valid_records:
             if request.user.username != record["user_id"] and not request.user.is_staff:
                 return Response({"error": "Unauthorized data submission"}, status=status.HTTP_403_FORBIDDEN)
 
             record["server_received_at"] = datetime.now(timezone.utc)
-            result = db.segment1_results.insert_one(record)
-            inserted_ids.append(str(result.inserted_id))
+
+            filter_query = {
+                "user_id": record["user_id"],
+                "window.start_emotibit_ms": record["window"]["start_emotibit_ms"],
+            }
+
+            db.segment1_results.update_one(
+                filter_query,
+                {"$set": record},
+                upsert=True
+            )
+            processed += 1
 
         return Response({
             "status": "success",
-            "records_processed": len(inserted_ids),
-            "inserted_ids": inserted_ids
+            "records_processed": processed
         }, status=status.HTTP_201_CREATED)
 
 # Segment 1 Result List View

@@ -87,12 +87,12 @@ class Segment1LLMResultSerializer(serializers.Serializer):
 
 
 class Segment1RunpodSerializer(serializers.Serializer):
-    request_id = serializers.CharField(required=False, allow_blank=True)
-    status = serializers.CharField(required=False, allow_blank=True)
+    request_id = serializers.CharField(required=False, allow_null=True, allow_blank=True)
+    status = serializers.CharField(required=False, allow_null=True, allow_blank=True)
     delay_time_ms = serializers.IntegerField(required=False, allow_null=True)
     execution_time_ms = serializers.IntegerField(required=False, allow_null=True)
-    worker_id = serializers.CharField(required=False, allow_blank=True)
-    endpoint_id = serializers.CharField(required=False, allow_blank=True)
+    worker_id = serializers.CharField(required=False, allow_null=True, allow_blank=True)
+    endpoint_id = serializers.CharField(required=False, allow_null=True, allow_blank=True)
 
 
 class Segment1ResultSerializer(serializers.Serializer):
